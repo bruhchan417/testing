@@ -1,0 +1,3 @@
+ffmpeg
+# Only if you use opencv-python (not headless):
+# libgl1
