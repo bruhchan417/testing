@@ -3,6 +3,6 @@ pandas
 numpy
 pillow
 opencv-python-headless
-tensorflow>=2.12,<3
+tensorflow>=2.18.*,<3
 streamlit-webrtc==0.64.5
 av>=14,<17
