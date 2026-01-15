@@ -1,18 +1,18 @@
 
-# Core
+# requirements.txt
+
 streamlit>=1.33
 pandas
 numpy
 pillow
 
-# OpenCV: use headless build on servers
+# Server-friendly OpenCV (no GUI/GL deps)
 opencv-python-headless
 
-# TensorFlow CPU (no GPU on Streamlit Cloud)
+# TensorFlow CPU (Community Cloud has no GPU)
 tensorflow>=2.12,<3
 
-# Live webcam via WebRTC
+# WebRTC stack
 streamlit-webrtc==0.64.5
-# Pin PyAV to a stable version (newer wheels can sometimes segfault on some Linux
-# images). If you still see crashes, try av==10.0.0 as a fallback.
-av==13.1.0
+# Match aiortc's requirement: av >=14 and <17
+av>=14,<17
