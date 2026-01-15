@@ -1,25 +1,18 @@
 
-# Streamlit
-streamlit>=1.29
+# --- Core pins compatible with each other ---
+numpy==1.26.4
+tensorflow==2.14.0
+keras==2.14.0
 
-# WebRTC stack
-streamlit-webrtc>=0.47
-aiortc>=1.8
-
-# requirements.txt candidates for av (try in this order)
+# --- Streamlit & WebRTC (these worked in your last log) ---
+streamlit==1.53.0
+streamlit-webrtc==0.64.5
+aiortc==1.14.0
 av==16.1.0
-# if it still downloads a .tar.gz, try:
-# av==15.1.0
-# av==14.4.0
-# av==12.3.0
 
-# CV/array
-opencv-python-headless>=4.8
-numpy>=1.23
-pillow>=10.0
+# --- CV / imaging ---
+opencv-python-headless==4.12.0.88
+pillow>=10
 
-# ML
-tensorflow>=2.12,<2.16  # CPU build on Linux; adjust as needed
-
-# Optional
+# --- Data (optional) ---
 pandas>=2.0
