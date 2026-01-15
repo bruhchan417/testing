@@ -6,8 +6,12 @@ streamlit>=1.29
 streamlit-webrtc>=0.47
 aiortc>=1.8
 
-av==9.2.0
-
+# requirements.txt candidates for av (try in this order)
+av==16.1.0
+# if it still downloads a .tar.gz, try:
+# av==15.1.0
+# av==14.4.0
+# av==12.3.0
 
 # CV/array
 opencv-python-headless>=4.8
