@@ -1,11 +1,9 @@
-
-# app.py
-import io
-
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ""    # don't even try to init CUDA
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # safer CPU kernels (avoid oneDNN quirks)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"   # quieter TF logs (optional)
+
+import io
 
 from typing import List, Tuple
 import threading
