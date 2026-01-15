@@ -17,5 +17,3 @@ pillow>=10
 # --- Data (optional) ---
 pandas>=2.0
 
-- numpy==2.2.6
-+ numpy==1.26.4
