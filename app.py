@@ -1,26 +1,18 @@
 
+# app.py
 import io
 import os
 from typing import List, Tuple
 import threading
+
+# ---- Optional: make TF safer on some CPUs before importing it
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
 import streamlit as st
 import numpy as np
 import cv2
 import tensorflow as tf
 from PIL import Image
-
-# New imports for WebRTC
-import av
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
-
-class TMVideoProcessor(VideoProcessorBase):
-    def recv(self, frame):
-        # Lazy import to keep startup robust
-        import av
-        ...
-        return av.VideoFrame.from_ndarray(vis, format="bgr24")
-
 
 # ------------------------
 # Config
@@ -29,15 +21,6 @@ MODEL_DIR = os.getenv("MODEL_DIR", "model.savedmodel")
 DEFAULT_LABELS_PATH = os.getenv("LABELS_PATH", "labels.txt")
 INPUT_SIZE: Tuple[int, int] = (224, 224)  # (height, width)
 CROP_SIZE: int = 672
-
-# WebRTC ICE servers (Use your own TURN for production)
-RTC_CONFIG = RTCConfiguration({
-    "iceServers": [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-        # Strongly recommended to add a TURN server for reliability behind NATs/firewalls:
-        # {"urls": ["turns:YOUR_TURN_HOST:5349"], "username": "user", "credential": "pass"},
-    ]
-})
 
 st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
 st.title("Teachable Machine Model — Streamlit Web App")
@@ -141,7 +124,7 @@ except Exception as e:
 infer_lock = threading.Lock()
 
 # ------------------------
-# Browser Camera Snapshot (existing)
+# Browser Camera Snapshot
 # ------------------------
 st.subheader("Browser Camera Snapshot")
 st.caption("Use your browser camera to capture an image and run inference.")
@@ -163,9 +146,9 @@ if photo is not None:
     st.image(vis_rgb, caption=f"Prediction: {label} (confidence {score:.2f})", use_column_width=True)
 
     if len(labels) > 1 and probs is not None:
-        import pandas as pd
-        df = pd.DataFrame({"Label": labels, "Probability": probs.astype(float)})
-        df = df.sort_values(by="Probability", ascending=False)
+        import pandas as pd  # lazy import
+        df = pd.DataFrame({"標籤 Label": labels, "機率 Probability": probs.astype(float)})
+        df = df.sort_values(by="機率 Probability", ascending=False)
         st.dataframe(df, use_container_width=True)
 
 # ------------------------
@@ -184,51 +167,56 @@ cam_choice = st.radio("Camera", ["Rear (environment)", "Front (user)"], index=0)
 video_constraints = {
     "video": {
         "facingMode": {"exact": "environment"} if cam_choice.startswith("Rear") else "user",
-        # Lower resolution keeps latency & CPU lower; adjust as needed
         "width": {"ideal": 640},
         "height": {"ideal": 480},
-        "frameRate": {"ideal": 24}
+        "frameRate": {"ideal": 24},
     },
-    "audio": False
+    "audio": False,
 }
 
-class TMVideoProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.last_label = None
-        self.last_score = None
+def live_webrtc_section(crop_size: int, infer, labels: List[str], infer_lock: threading.Lock, constraints: dict):
+    # Import here so the app can boot before touching av/aiortc/ffmpeg
+    from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
 
-    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        # Convert to BGR (OpenCV)
-        img_bgr = frame.to_ndarray(format="bgr24")
+    RTC_CONFIG = RTCConfiguration({
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            # For Cloud/NAT reliability add TURN here.
+            # {"urls": ["turn:YOUR_TURN_HOST:3478"], "username": "user", "credential": "pass"},
+        ]
+    })
 
-        # Center crop
-        crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(img_bgr, crop_size)
+    class TMVideoProcessor(VideoProcessorBase):
+        def __init__(self):
+            self.last_label = None
+            self.last_score = None
 
-        # Predict (guard with lock for TF thread-safety)
-        with infer_lock:
-            label, score, _ = predict(crop_bgr, infer, labels)
-        self.last_label = label
-        self.last_score = score
+        def recv(self, frame):
+            # Lazy import av only when frames start arriving
+            import av
+            img_bgr = frame.to_ndarray(format="bgr24")
+            crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(img_bgr, crop_size)
+            with infer_lock:
+                label, score, _ = predict(crop_bgr, infer, labels)
+            self.last_label, self.last_score = label, score
+            vis = img_bgr.copy()
+            cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
+            cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+            return av.VideoFrame.from_ndarray(vis, format="bgr24")
 
-        # Draw overlay
-        vis = img_bgr.copy()
-        cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
-        cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+    webrtc_ctx = webrtc_streamer(
+        key="tm-live",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=RTC_CONFIG,
+        media_stream_constraints=constraints,
+        video_processor_factory=TMVideoProcessor,
+        async_processing=True,
+    )
 
-        return av.VideoFrame.from_ndarray(vis, format="bgr24")
+    if webrtc_ctx and webrtc_ctx.video_processor and webrtc_ctx.video_processor.last_label:
+        st.info(f"Live prediction: **{webrtc_ctx.video_processor.last_label}** "
+                f"(confidence **{webrtc_ctx.video_processor.last_score:.2f}**)")
 
-webrtc_ctx = webrtc_streamer(
-    key="tm-live",
-    mode=WebRtcMode.SENDRECV,               # send from browser, receive back processed video
-    rtc_configuration=RTC_CONFIG,
-    media_stream_constraints=video_constraints,
-    video_processor_factory=TMVideoProcessor,
-    async_processing=True,                  # keep UI responsive
-)
-
-# Show the latest prediction from the processor in text as well
-if webrtc_ctx and webrtc_ctx.video_processor:
-    vp = webrtc_ctx.video_processor
-    if vp.last_label is not None:
-        st.info(f"Live prediction: **{vp.last_label}** (confidence **{vp.last_score:.2f}**)")
+# 👉 Call the live section so it renders
+live_webrtc_section(crop_size, infer, labels, infer_lock, video_constraints)
