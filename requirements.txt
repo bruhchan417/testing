@@ -5,7 +5,16 @@ streamlit>=1.29
 # WebRTC stack
 streamlit-webrtc>=0.47
 aiortc>=1.8
-av==10.*             # works well on Py3.11 with wheels
+
+# start here
+av==11.*
+
+# if it still builds from source, try:
+# av==10.0.0.post1
+
+# if that also fails, try a known older wheel:
+# av==9.2.0
+
 
 # CV/array
 opencv-python-headless>=4.8
