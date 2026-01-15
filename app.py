@@ -178,9 +178,16 @@ video_constraints = {
 }
 
 def live_webrtc_section(crop_size: int, infer, labels: List[str], infer_lock: threading.Lock, constraints: dict):
-    # Import here so the app can boot before touching av/aiortc/ffmpeg
-    from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
-
+    try:
+        from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
+        import av  # ensure PyAV is present before wiring the pipeline
+    except Exception as e:
+        st.warning(
+            f"Live webcam disabled (dependency missing): {e}. "
+            "Snapshot mode still works. Try Python 3.11 and a PyAV wheel."
+        )
+        return
+        
     RTC_CONFIG = RTCConfiguration({
         "iceServers": [
             {"urls": ["stun:stun.l.google.com:19302"]},
