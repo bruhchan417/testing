@@ -108,9 +108,7 @@ with st.sidebar:
 try:
     infer = load_model(model_dir)
 except Exception as e:
-    st.error(f"Failed to load model from '{model_dir}'. Make sure the folder exists and contains saved_model.pb.
-
-Error: {e}")
+    st.error(f"Failed to load model from '{model_dir}'. Make sure the folder exists and contains saved_model.pb. Error: {e}")
     st.stop()
 
 # Load labels
