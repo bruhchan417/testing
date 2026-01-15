@@ -1,15 +1,18 @@
 
+# Core
 streamlit>=1.33
-opencv-python-headless
+pandas
 numpy
 pillow
 
-# Live webcam (WebRTC)
-streamlit-webrtc
-av
+# OpenCV: use headless build on servers
+opencv-python-headless
 
-# Choose a TensorFlow build appropriate to your OS/CPU/GPU
-# For most Linux/Windows (CPU):
-tensorflow>=2.12
-# On Apple Silicon macOS, replace the above line with:
-# tensorflow-macos>=2.12
+# TensorFlow CPU (no GPU on Streamlit Cloud)
+tensorflow>=2.12,<3
+
+# Live webcam via WebRTC
+streamlit-webrtc==0.64.5
+# Pin PyAV to a stable version (newer wheels can sometimes segfault on some Linux
+# images). If you still see crashes, try av==10.0.0 as a fallback.
+av==13.1.0
