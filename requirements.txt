@@ -1,8 +1,9 @@
+# requirements.txt (recommended)
 streamlit>=1.33
 pandas
 numpy
 pillow
 opencv-python-headless
-tensorflow>=2.18.*,<3
+tensorflow-cpu==2.20.0          # or pin 2.18.0 if you prefer
 streamlit-webrtc==0.64.5
 av>=14,<17
