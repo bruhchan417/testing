@@ -2,12 +2,17 @@
 import io
 import os
 from typing import List, Tuple
+import threading
 
 import streamlit as st
 import numpy as np
 import cv2
 import tensorflow as tf
 from PIL import Image
+
+# New imports for WebRTC
+import av
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
 
 # ------------------------
 # Config
@@ -17,9 +22,18 @@ DEFAULT_LABELS_PATH = os.getenv("LABELS_PATH", "labels.txt")
 INPUT_SIZE: Tuple[int, int] = (224, 224)  # (height, width)
 CROP_SIZE: int = 672
 
+# WebRTC ICE servers (Use your own TURN for production)
+RTC_CONFIG = RTCConfiguration({
+    "iceServers": [
+        {"urls": ["stun:stun.l.google.com:19302"]},
+        # Strongly recommended to add a TURN server for reliability behind NATs/firewalls:
+        # {"urls": ["turns:YOUR_TURN_HOST:5349"], "username": "user", "credential": "pass"},
+    ]
+})
+
 st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
 st.title("Teachable Machine Model — Streamlit Web App")
-st.caption("Runs a TensorFlow SavedModel on camera snapshots. For live webcam, run locally.")
+st.caption("Runs a TensorFlow SavedModel on camera snapshots or a live browser camera stream.")
 
 # ------------------------
 # Helpers
@@ -43,7 +57,6 @@ def load_model(dir_path: str):
     infer = model.signatures["serving_default"]
     return infer
 
-
 def preprocess_bgr_frame_for_model(frame_bgr: np.ndarray) -> np.ndarray:
     # Convert BGR -> RGB
     img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -54,8 +67,7 @@ def preprocess_bgr_frame_for_model(frame_bgr: np.ndarray) -> np.ndarray:
     # Add batch dimension
     return np.expand_dims(img, axis=0)
 
-
-def safe_center_crop_bgr(frame_bgr: np.ndarray, crop_size: int) -> np.ndarray:
+def safe_center_crop_bgr(frame_bgr: np.ndarray, crop_size: int) -> Tuple[np.ndarray, Tuple[int,int], Tuple[int,int]]:
     h, w = frame_bgr.shape[:2]
     cx, cy = w // 2, h // 2
     half = crop_size // 2
@@ -68,32 +80,28 @@ def safe_center_crop_bgr(frame_bgr: np.ndarray, crop_size: int) -> np.ndarray:
     tly = max(0, bry - crop_size)
     return frame_bgr[tly:bry, tlx:brx], (tlx, tly), (brx, bry)
 
-
 def predict(frame_bgr: np.ndarray, infer, labels: List[str]):
     x = preprocess_bgr_frame_for_model(frame_bgr)
     outputs = infer(tf.constant(x))
     # Get the first tensor in outputs dict robustly
     if isinstance(outputs, dict):
-        # Prefer keys that look like probabilities
         for preferred in ("probabilities", "softmax", "predictions", "Identity", "output_0"):
             if preferred in outputs:
                 probs = outputs[preferred].numpy()
                 break
         else:
-            # Fallback to the first value
             probs = next(iter(outputs.values())).numpy()
     else:
         probs = outputs.numpy()
 
-    probs = probs[0]  # shape: (num_classes,)
+    probs = probs[0]
     top_idx = int(np.argmax(probs))
     label = labels[top_idx] if 0 <= top_idx < len(labels) else str(top_idx)
     score = float(probs[top_idx])
     return label, score, probs
 
-
 # ------------------------
-# Load Model & Labels
+# Sidebar — Model & Labels
 # ------------------------
 with st.sidebar:
     st.header("Settings")
@@ -104,7 +112,7 @@ with st.sidebar:
         uploaded_labels = st.file_uploader("Upload labels.txt", type=["txt"], accept_multiple_files=False)
     crop_size = st.slider("Crop size (pixels)", min_value=128, max_value=1024, value=CROP_SIZE, step=32)
 
-# Attempt to load model
+# Load model
 try:
     infer = load_model(model_dir)
 except Exception as e:
@@ -121,9 +129,11 @@ except Exception as e:
     st.warning(f"Could not load labels. Falling back to indices. Error: {e}")
     labels = []
 
+# A small lock for TF inference if multiple frames come concurrently
+infer_lock = threading.Lock()
 
 # ------------------------
-# Camera (Browser) Mode
+# Browser Camera Snapshot (existing)
 # ------------------------
 st.subheader("Browser Camera Snapshot")
 st.caption("Use your browser camera to capture an image and run inference.")
@@ -131,68 +141,86 @@ photo = st.camera_input("Capture a photo")
 if photo is not None:
     image = Image.open(io.BytesIO(photo.getvalue())).convert("RGB")
     frame_rgb = np.array(image)
-    # Convert to BGR for OpenCV-style processing
     frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
 
-    # Center crop with safety
     crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(frame_bgr, crop_size)
-    label, score, probs = predict(crop_bgr, infer, labels)
+    with infer_lock:
+        label, score, probs = predict(crop_bgr, infer, labels)
 
-    # Draw rectangle & label on original frame for visualization
     vis = frame_bgr.copy()
     cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
     cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
-
-    # Convert back to RGB for display
     vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
     st.image(vis_rgb, caption=f"Prediction: {label} (confidence {score:.2f})", use_column_width=True)
 
-    # Show probabilities if labels exist
     if len(labels) > 1 and probs is not None:
         import pandas as pd
         df = pd.DataFrame({"Label": labels, "Probability": probs.astype(float)})
         df = df.sort_values(by="Probability", ascending=False)
         st.dataframe(df, use_container_width=True)
 
-
 # ------------------------
-# (Optional) Local Live Webcam Mode - for desktop runs only
+# Live Webcam (Phone/Browser) via WebRTC
 # ------------------------
 st.divider()
-st.subheader("Local Live Webcam (Advanced)")
-st.caption("This requires running the app locally with access to your system webcam. Not supported on Streamlit Cloud.")
-if "run_live" not in st.session_state:
-    st.session_state.run_live = False
+st.subheader("Live Webcam (Phone/Browser)")
+st.caption(
+    "Works in mobile browsers using WebRTC. For iOS, open in Safari and ensure HTTPS. "
+    "Click 'Allow' when the browser asks for camera permissions."
+)
 
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("Start live webcam"):
-        st.session_state.run_live = True
-with col2:
-    if st.button("Stop live webcam"):
-        st.session_state.run_live = False
+# Pick which camera to use; 'environment' is rear camera on phones
+cam_choice = st.radio("Camera", ["Rear (environment)", "Front (user)"], index=0)
 
-placeholder = st.empty()
+video_constraints = {
+    "video": {
+        "facingMode": {"exact": "environment"} if cam_choice.startswith("Rear") else "user",
+        # Lower resolution keeps latency & CPU lower; adjust as needed
+        "width": {"ideal": 640},
+        "height": {"ideal": 480},
+        "frameRate": {"ideal": 24}
+    },
+    "audio": False
+}
 
-if st.session_state.run_live:
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        st.error("Cannot open webcam. Try a different index or check permissions.")
-    else:
-        while st.session_state.run_live:
-            ret, frame_bgr = cap.read()
-            if not ret:
-                st.warning("Failed to read frame from webcam.")
-                break
-            crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(frame_bgr, crop_size)
-            label, score, probs = predict(crop_bgr, infer, labels)
-            vis = frame_bgr.copy()
-            cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
-            cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
-            vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
-            placeholder.image(vis_rgb, caption=f"Prediction: {label} (confidence {score:.2f})", use_column_width=True)
-            # A small sleep to avoid busy-loop
-            st.experimental_sleep(0.03)
-        cap.release()
+class TMVideoProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.last_label = None
+        self.last_score = None
+
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        # Convert to BGR (OpenCV)
+        img_bgr = frame.to_ndarray(format="bgr24")
+
+        # Center crop
+        crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(img_bgr, crop_size)
+
+        # Predict (guard with lock for TF thread-safety)
+        with infer_lock:
+            label, score, _ = predict(crop_bgr, infer, labels)
+        self.last_label = label
+        self.last_score = score
+
+        # Draw overlay
+        vis = img_bgr.copy()
+        cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
+        cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+
+        return av.VideoFrame.from_ndarray(vis, format="bgr24")
+
+webrtc_ctx = webrtc_streamer(
+    key="tm-live",
+    mode=WebRtcMode.SENDRECV,               # send from browser, receive back processed video
+    rtc_configuration=RTC_CONFIG,
+    media_stream_constraints=video_constraints,
+    video_processor_factory=TMVideoProcessor,
+    async_processing=True,                  # keep UI responsive
+)
+
+# Show the latest prediction from the processor in text as well
+if webrtc_ctx and webrtc_ctx.video_processor:
+    vp = webrtc_ctx.video_processor
+    if vp.last_label is not None:
+        st.info(f"Live prediction: **{vp.last_label}** (confidence **{vp.last_score:.2f}**)")
