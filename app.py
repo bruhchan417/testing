@@ -14,6 +14,14 @@ from PIL import Image
 import av
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
 
+class TMVideoProcessor(VideoProcessorBase):
+    def recv(self, frame):
+        # Lazy import to keep startup robust
+        import av
+        ...
+        return av.VideoFrame.from_ndarray(vis, format="bgr24")
+
+
 # ------------------------
 # Config
 # ------------------------
