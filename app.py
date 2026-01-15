@@ -1,33 +1,38 @@
+
+# ------------------------
+# Environment & logging (safer CPU-only TF)
+# ------------------------
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""    # don't even try to init CUDA
+os.environ["CUDA_VISIBLE_DEVICES"] = ""    # don't try to init CUDA
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # safer CPU kernels (avoid oneDNN quirks)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"   # quieter TF logs (optional)
 
 import io
-
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 import threading
+
+# Streamlit first so set_page_config can run early
+import streamlit as st
 
 # ---- Optional: make TF safer on some CPUs before importing it
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
-import streamlit as st
 import numpy as np
 import cv2
 import tensorflow as tf
 from PIL import Image
 
 # ------------------------
-# Config
+# Page & App Config
 # ------------------------
+st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
+st.title("Teachable Machine Model — Streamlit Web App")
+st.caption("Runs a TensorFlow SavedModel on camera snapshots or a live browser camera stream.")
+
 MODEL_DIR = os.getenv("MODEL_DIR", "model.savedmodel")
 DEFAULT_LABELS_PATH = os.getenv("LABELS_PATH", "labels.txt")
 INPUT_SIZE: Tuple[int, int] = (224, 224)  # (height, width)
 CROP_SIZE: int = 672
-
-st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
-st.title("Teachable Machine Model — Streamlit Web App")
-st.caption("Runs a TensorFlow SavedModel on camera snapshots or a live browser camera stream.")
 
 # ------------------------
 # Helpers
@@ -95,7 +100,34 @@ def predict(frame_bgr: np.ndarray, infer, labels: List[str]):
     return label, score, probs
 
 # ------------------------
-# Sidebar — Model & Labels
+# WebRTC ICE configuration (Step 2)
+# ------------------------
+def get_ice_servers_from_secrets() -> List[Dict[str, Any]]:
+    """
+    Reads ICE servers from .streamlit/secrets.toml under:
+      [ice]
+      servers = [{ urls = ["stun:..."] }, { urls = ["turn:host:3478"], username="...", credential="..." }]
+    Falls back to Google STUN if missing.
+    """
+    try:
+        return st.secrets["ice"]["servers"]  # list of dicts
+    except Exception:
+        return [{"urls": ["stun:stun.l.google.com:19302"]}]
+
+def get_rtc_configuration(force_relay: bool = False) -> Dict[str, Any]:
+    """
+    Compose a browser RTCConfiguration payload.
+    In streamlit-webrtc, you can pass a plain dict with 'iceServers' and 'iceTransportPolicy'.
+    """
+    ice_servers = get_ice_servers_from_secrets()
+    cfg: Dict[str, Any] = {"iceServers": ice_servers}
+    if force_relay:
+        # Use TURN only (relay). Useful to confirm TURN works or for privacy.
+        cfg["iceTransportPolicy"] = "relay"
+    return cfg
+
+# ------------------------
+# Sidebar — Settings
 # ------------------------
 with st.sidebar:
     st.header("Settings")
@@ -106,14 +138,30 @@ with st.sidebar:
         uploaded_labels = st.file_uploader("Upload labels.txt", type=["txt"], accept_multiple_files=False)
     crop_size = st.slider("Crop size (pixels)", min_value=128, max_value=1024, value=CROP_SIZE, step=32)
 
-# Load model
+    st.divider()
+    st.subheader("WebRTC (STUN/TURN)")
+    force_relay = st.toggle("Force relay (TURN only)", value=False,
+                            help="Use only relay candidates. Requires a valid TURN server in secrets.")
+    # Show a hint if we only have STUN (no TURN) and force relay is enabled
+    ice_servers_preview = get_ice_servers_from_secrets()
+    if force_relay:
+        has_turn = any(any(str(u).startswith("turn:") for u in s.get("urls", [])) for s in ice_servers_preview)
+        if not has_turn:
+            st.warning("You enabled **relay-only**, but no TURN server is configured in secrets.\n\n"
+                       "Add one to `.streamlit/secrets.toml` → the example is below the app.")
+
+    with st.expander("Show current ICE servers (from secrets)"):
+        st.code(ice_servers_preview, language="python")
+
+# ------------------------
+# Load model and labels
+# ------------------------
 try:
     infer = load_model(model_dir)
 except Exception as e:
-    st.error(f"Failed to load model from '{model_dir}'. Make sure the folder exists and contains saved_model.pb. Error: {e}")
+    st.error(f"Failed to load model from '{model_dir}'. Make sure the folder exists and contains saved_model.pb.\n\nError: {e}")
     st.stop()
 
-# Load labels
 try:
     if uploaded_labels is not None:
         labels = load_labels_from_uploaded(uploaded_labels)
@@ -123,7 +171,7 @@ except Exception as e:
     st.warning(f"Could not load labels. Falling back to indices. Error: {e}")
     labels = []
 
-# A small lock for TF inference if multiple frames come concurrently
+# Thread lock for inference when multiple frames are processed
 infer_lock = threading.Lock()
 
 # ------------------------
@@ -131,6 +179,7 @@ infer_lock = threading.Lock()
 # ------------------------
 st.subheader("Browser Camera Snapshot")
 st.caption("Use your browser camera to capture an image and run inference.")
+
 photo = st.camera_input("Capture a photo")
 if photo is not None:
     image = Image.open(io.BytesIO(photo.getvalue())).convert("RGB")
@@ -153,7 +202,7 @@ if photo is not None:
         df = pd.DataFrame({"標籤 Label": labels, "機率 Probability": probs.astype(float)})
         df = df.sort_values(by="機率 Probability", ascending=False)
         st.dataframe(df, use_container_width=True)
-        
+
 # ------------------------
 # Live Webcam (Phone/Browser) via WebRTC
 # ------------------------
@@ -170,6 +219,7 @@ cam_choice = st.radio("Camera", ["Rear (environment)", "Front (user)"], index=0)
 video_constraints = {
     "video": {
         "facingMode": {"exact": "environment"} if cam_choice.startswith("Rear") else "user",
+        # Lower defaults: more likely to connect on weak networks
         "width": {"ideal": 640},
         "height": {"ideal": 480},
         "frameRate": {"ideal": 24},
@@ -177,24 +227,23 @@ video_constraints = {
     "audio": False,
 }
 
-def live_webrtc_section(crop_size: int, infer, labels: List[str], infer_lock: threading.Lock, constraints: dict):
+def live_webrtc_section(
+    crop_size: int,
+    infer,
+    labels: List[str],
+    infer_lock: threading.Lock,
+    constraints: dict,
+    rtc_configuration: Dict[str, Any],
+):
     try:
-        from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
+        from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
         import av  # ensure PyAV is present before wiring the pipeline
     except Exception as e:
         st.warning(
             f"Live webcam disabled (dependency missing): {e}. "
-            "Snapshot mode still works. Try Python 3.11 and a PyAV wheel."
+            "Snapshot mode still works. If deploying, ensure Python 3.11 and a PyAV wheel."
         )
         return
-        
-    RTC_CONFIG = RTCConfiguration({
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            # For Cloud/NAT reliability add TURN here.
-            # {"urls": ["turn:YOUR_TURN_HOST:3478"], "username": "user", "credential": "pass"},
-        ]
-    })
 
     class TMVideoProcessor(VideoProcessorBase):
         def __init__(self):
@@ -218,15 +267,34 @@ def live_webrtc_section(crop_size: int, infer, labels: List[str], infer_lock: th
     webrtc_ctx = webrtc_streamer(
         key="tm-live",
         mode=WebRtcMode.SENDRECV,
-        rtc_configuration=RTC_CONFIG,
+        rtc_configuration=rtc_configuration,     # <-- Step 2: pass ICE config (STUN/TURN)
         media_stream_constraints=constraints,
         video_processor_factory=TMVideoProcessor,
         async_processing=True,
     )
 
     if webrtc_ctx and webrtc_ctx.video_processor and webrtc_ctx.video_processor.last_label:
-        st.info(f"Live prediction: **{webrtc_ctx.video_processor.last_label}** "
-                f"(confidence **{webrtc_ctx.video_processor.last_score:.2f}**)")
+        st.info(
+            f"Live prediction: **{webrtc_ctx.video_processor.last_label}** "
+            f"(confidence **{webrtc_ctx.video_processor.last_score:.2f}**)"
+        )
 
-# 👉 Call the live section so it renders
-live_webrtc_section(crop_size, infer, labels, infer_lock, video_constraints)
+# Build RTC configuration and render section
+rtc_cfg = get_rtc_configuration(force_relay=force_relay)
+live_webrtc_section(crop_size, infer, labels, infer_lock, video_constraints, rtc_cfg)
+
+# ------------------------
+# Footer: QUICK HOW-TO for TURN
+# ------------------------
+st.divider()
+with st.expander("How to configure TURN (recommended for NAT/office Wi‑Fi)"):
+    st.markdown(
+        """
+**1) Add your credentials to `.streamlit/secrets.toml`** and redeploy:
+
+```toml
+[ice]
+servers = [
+  { urls = ["stun:stun.l.google.com:19302"] },
+  { urls = ["turn:turn.your-domain.com:3478"], username = "webrtcuser", credential = "STRONG_PASSWORD" }
+]
