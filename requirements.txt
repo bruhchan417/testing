@@ -1,9 +1,20 @@
+
+# Streamlit
 streamlit>=1.29
+
+# WebRTC stack
 streamlit-webrtc>=0.47
 aiortc>=1.8
-av==10.*
+av==10.*             # works well on Py3.11 with wheels
+
+# CV/array
 opencv-python-headless>=4.8
 numpy>=1.23
 pillow>=10.0
-tensorflow>=2.12,<2.16
+
+# ML
+tensorflow>=2.12,<2.16  # CPU build on Linux; adjust as needed
+
+# Optional
 pandas>=2.0
+``
