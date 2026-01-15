@@ -1,8 +1,9 @@
-streamlit>=1.33
-pandas
-numpy
-pillow
-opencv-python-headless
-tensorflow-cpu==2.20.0
-streamlit-webrtc==0.64.5
-av>=14,<17
+streamlit>=1.29
+streamlit-webrtc>=0.47
+aiortc>=1.8
+av==10.*
+opencv-python-headless>=4.8
+numpy>=1.23
+pillow>=10.0
+tensorflow>=2.12,<2.16  # CPU build on Linux; adjust smaller if memory is tight
+pandas>=2.0
