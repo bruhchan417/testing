@@ -3,6 +3,11 @@ streamlit>=1.33
 opencv-python-headless
 numpy
 pillow
+
+# Live webcam (WebRTC)
+streamlit-webrtc
+av
+
 # Choose a TensorFlow build appropriate to your OS/CPU/GPU
 # For most Linux/Windows (CPU):
 tensorflow>=2.12
