@@ -1,6 +1,6 @@
 
 streamlit>=1.33
-opencv-python
+opencv-python-headless
 numpy
 pillow
 # Choose a TensorFlow build appropriate to your OS/CPU/GPU
