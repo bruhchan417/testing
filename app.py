@@ -99,32 +99,63 @@ def predict(frame_bgr: np.ndarray, infer, labels: List[str]):
     score = float(probs[top_idx])
     return label, score, probs
 
+
 # ------------------------
-# WebRTC ICE configuration (Step 2)
+# WebRTC ICE configuration (sanitize to JSON-safe types)
 # ------------------------
-def get_ice_servers_from_secrets() -> List[Dict[str, Any]]:
+from collections.abc import Mapping, Sequence
+
+def _to_pure(obj):
+    """Recursively convert obj to only built-in, JSON-serializable Python types.
+    (dict/list/str/int/float/bool/None)."""
+    # Avoid treating bytes like sequences of ints
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="ignore")
+    if isinstance(obj, Mapping):
+        return {str(k): _to_pure(v) for k, v in obj.items()}
+    if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes, bytearray)):
+        return [_to_pure(v) for v in obj]
+    # Fallback: stringify anything else
+    return str(obj)
+
+def get_ice_servers_from_secrets() -> list[dict]:
     """
-    Reads ICE servers from .streamlit/secrets.toml under:
+    Reads ICE servers from `.streamlit/secrets.toml` and returns a JSON-safe list of dicts.
+    Falls back to Google STUN if secrets are missing.
+    Expected structure in secrets:
+
       [ice]
-      servers = [{ urls = ["stun:..."] }, { urls = ["turn:host:3478"], username="...", credential="..." }]
-    Falls back to Google STUN if missing.
+      servers = [
+        { urls = ["stun:stun.l.google.com:19302"] },
+        { urls = ["turn:turn.example.com:3478"], username = "user", credential = "pass" }
+      ]
     """
     try:
-        return st.secrets["ice"]["servers"]  # list of dicts
+        raw = st.secrets["ice"]["servers"]
+        # Build a new list with only plain Python types
+        pure = []
+        for s in raw:
+            entry = {
+                "urls": [str(u) for u in s.get("urls", [])],
+            }
+            if "username" in s:
+                entry["username"] = str(s["username"])
+            if "credential" in s:
+                entry["credential"] = str(s["credential"])
+            pure.append(entry)
+        # As a final guard, run it through _to_pure
+        return _to_pure(pure)
     except Exception:
         return [{"urls": ["stun:stun.l.google.com:19302"]}]
 
-def get_rtc_configuration(force_relay: bool = False) -> Dict[str, Any]:
-    """
-    Compose a browser RTCConfiguration payload.
-    In streamlit-webrtc, you can pass a plain dict with 'iceServers' and 'iceTransportPolicy'.
-    """
-    ice_servers = get_ice_servers_from_secrets()
-    cfg: Dict[str, Any] = {"iceServers": ice_servers}
+def get_rtc_configuration(force_relay: bool = False) -> dict:
+    cfg = {"iceServers": get_ice_servers_from_secrets()}
     if force_relay:
-        # Use TURN only (relay). Useful to confirm TURN works or for privacy.
         cfg["iceTransportPolicy"] = "relay"
-    return cfg
+    # Ensure the whole structure is JSON-safe
+    return _to_pure(cfg)
 
 # ------------------------
 # Sidebar — Settings
