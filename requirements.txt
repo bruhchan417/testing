@@ -1,18 +1,8 @@
-
-# requirements.txt
-
 streamlit>=1.33
 pandas
 numpy
 pillow
-
-# Server-friendly OpenCV (no GUI/GL deps)
 opencv-python-headless
-
-# TensorFlow CPU (Community Cloud has no GPU)
 tensorflow>=2.12,<3
-
-# WebRTC stack
 streamlit-webrtc==0.64.5
-# Match aiortc's requirement: av >=14 and <17
 av>=14,<17
