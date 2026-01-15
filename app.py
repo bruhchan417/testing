@@ -283,18 +283,3 @@ def live_webrtc_section(
 rtc_cfg = get_rtc_configuration(force_relay=force_relay)
 live_webrtc_section(crop_size, infer, labels, infer_lock, video_constraints, rtc_cfg)
 
-# ------------------------
-# Footer: QUICK HOW-TO for TURN
-# ------------------------
-st.divider()
-with st.expander("How to configure TURN (recommended for NAT/office Wi‑Fi)"):
-    st.markdown(
-        """
-**1) Add your credentials to `.streamlit/secrets.toml`** and redeploy:
-
-```toml
-[ice]
-servers = [
-  { urls = ["stun:stun.l.google.com:19302"] },
-  { urls = ["turn:turn.your-domain.com:3478"], username = "webrtcuser", credential = "STRONG_PASSWORD" }
-]
