@@ -5,5 +5,5 @@ av==10.*
 opencv-python-headless>=4.8
 numpy>=1.23
 pillow>=10.0
-tensorflow>=2.12,<2.16  # CPU build on Linux; adjust smaller if memory is tight
+tensorflow>=2.12,<2.16
 pandas>=2.0
