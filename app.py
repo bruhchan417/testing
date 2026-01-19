@@ -213,112 +213,120 @@ except Exception as e:
 # Thread lock for inference when multiple frames are processed
 infer_lock = threading.Lock()
 
-# ------------------------
-# Browser Camera Snapshot
-# ------------------------
-st.subheader("🖼️ Static Image Capture")
-st.caption("Use your browser camera to capture an image of fruit and run the model.")
+tab1, tab2= st.tabs(["Snapshot", "Live WebCam"])
 
-photo = st.camera_input("📸 Capture a photo")
-if photo is not None:
-    image = Image.open(io.BytesIO(photo.getvalue())).convert("RGB")
-    frame_rgb = np.array(image)
-    frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+with tab1:
+    # ------------------------
+    # Browser Camera Snapshot
+    # ------------------------
+    st.subheader("🖼️ Static Image Capture")
+    st.caption("Use your browser camera to capture an image of fruit and run the model.")
+    
+    photo = st.camera_input("📸 Capture a photo")
+    if photo is not None:
+        image = Image.open(io.BytesIO(photo.getvalue())).convert("RGB")
+        frame_rgb = np.array(image)
+        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+    
+        crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(frame_bgr, crop_size)
+        with infer_lock:
+            label, score, probs = predict(crop_bgr, infer, labels)
+    
+        vis = frame_bgr.copy()
+        cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
+        cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+        vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
+        st.image(vis_rgb, caption=f"Prediction: {label} (confidence {score:.2f})", use_column_width=True)
+    
+        if len(labels) > 1 and probs is not None:
+            import pandas as pd  # lazy import
+            df = pd.DataFrame({"標籤 Label": labels, "機率 Probability": probs.astype(float)})
+            df = df.sort_values(by="機率 Probability", ascending=False)
+            st.dataframe(df, use_container_width=True)
 
-    crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(frame_bgr, crop_size)
-    with infer_lock:
-        label, score, probs = predict(crop_bgr, infer, labels)
-
-    vis = frame_bgr.copy()
-    cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
-    cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
-    vis_rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
-    st.image(vis_rgb, caption=f"Prediction: {label} (confidence {score:.2f})", use_column_width=True)
-
-    if len(labels) > 1 and probs is not None:
-        import pandas as pd  # lazy import
-        df = pd.DataFrame({"標籤 Label": labels, "機率 Probability": probs.astype(float)})
-        df = df.sort_values(by="機率 Probability", ascending=False)
-        st.dataframe(df, use_container_width=True)
-
-# ------------------------
-# Live Webcam (Phone/Browser) via WebRTC
-# ------------------------
-st.divider()
-st.subheader("🖲 Real‑Time Detection")
-st.caption(
-    "process live video streams from the user’s browser camera. "
-    "Click 'Allow' when the browser asks for camera permissions."
-)
-
-# Pick which camera to use; 'environment' is rear camera on phones
-cam_choice = st.radio("📹 Camera", ["Rear (environment)", "Front (user)"], index=0)
-
-video_constraints = {
-    "video": {
-        "facingMode": {"exact": "environment"} if cam_choice.startswith("Rear") else "user",
-        # Lower defaults: more likely to connect on weak networks
-        "width": {"ideal": 640},
-        "height": {"ideal": 480},
-        "frameRate": {"ideal": 24},
-    },
-    "audio": False,
-}
-
-def live_webrtc_section(
-    crop_size: int,
-    infer,
-    labels: List[str],
-    infer_lock: threading.Lock,
-    constraints: dict,
-    rtc_configuration: Dict[str, Any],
-):
-    try:
-        from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
-        import av  # ensure PyAV is present before wiring the pipeline
-    except Exception as e:
-        st.warning(
-            f"Live webcam disabled (dependency missing): {e}. "
-            "Snapshot mode still works. If deploying, ensure Python 3.11 and a PyAV wheel."
-        )
-        return
-
-    class TMVideoProcessor(VideoProcessorBase):
-        def __init__(self):
-            self.last_label = None
-            self.last_score = None
-
-        def recv(self, frame):
-            # Lazy import av only when frames start arriving
-            import av
-            img_bgr = frame.to_ndarray(format="bgr24")
-            crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(img_bgr, crop_size)
-            with infer_lock:
-                label, score, _ = predict(crop_bgr, infer, labels)
-            self.last_label, self.last_score = label, score
-            vis = img_bgr.copy()
-            cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
-            cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
-            return av.VideoFrame.from_ndarray(vis, format="bgr24")
-
-    webrtc_ctx = webrtc_streamer(
-        key="tm-live",
-        mode=WebRtcMode.SENDRECV,
-        rtc_configuration=rtc_configuration,     # <-- Step 2: pass ICE config (STUN/TURN)
-        media_stream_constraints=constraints,
-        video_processor_factory=TMVideoProcessor,
-        async_processing=True,
+with tab2:
+    # ------------------------
+    # Live Webcam (Phone/Browser) via WebRTC
+    # ------------------------
+    st.divider()
+    st.subheader("🖲 Real‑Time Detection")
+    st.caption(
+        "process live video streams from the user’s browser camera. "
+        "Click 'Allow' when the browser asks for camera permissions."
     )
-
-    if webrtc_ctx and webrtc_ctx.video_processor and webrtc_ctx.video_processor.last_label:
-        st.info(
-            f"Live prediction: **{webrtc_ctx.video_processor.last_label}** "
-            f"(confidence **{webrtc_ctx.video_processor.last_score:.2f}**)"
+    
+    # Pick which camera to use; 'environment' is rear camera on phones
+    cam_choice = st.radio("📹 Camera", ["Rear (environment)", "Front (user)"], index=0)
+    
+    video_constraints = {
+        "video": {
+            "facingMode": {"exact": "environment"} if cam_choice.startswith("Rear") else "user",
+            # Lower defaults: more likely to connect on weak networks
+            "width": {"ideal": 640},
+            "height": {"ideal": 480},
+            "frameRate": {"ideal": 24},
+        },
+        "audio": False,
+    }
+    
+    def live_webrtc_section(
+        crop_size: int,
+        infer,
+        labels: List[str],
+        infer_lock: threading.Lock,
+        constraints: dict,
+        rtc_configuration: Dict[str, Any],
+    ):
+        try:
+            from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
+            import av  # ensure PyAV is present before wiring the pipeline
+        except Exception as e:
+            st.warning(
+                f"Live webcam disabled (dependency missing): {e}. "
+                "Snapshot mode still works. If deploying, ensure Python 3.11 and a PyAV wheel."
+            )
+            return
+    
+        class TMVideoProcessor(VideoProcessorBase):
+            def __init__(self):
+                self.last_label = None
+                self.last_score = None
+    
+            def recv(self, frame):
+                # Lazy import av only when frames start arriving
+                import av
+                img_bgr = frame.to_ndarray(format="bgr24")
+                crop_bgr, (tlx, tly), (brx, bry) = safe_center_crop_bgr(img_bgr, crop_size)
+                with infer_lock:
+                    label, score, _ = predict(crop_bgr, infer, labels)
+                self.last_label, self.last_score = label, score
+                vis = img_bgr.copy()
+                cv2.rectangle(vis, (tlx, tly), (brx, bry), (0, 255, 0), 3)
+                cv2.putText(vis, f"{label} ({score:.2f})", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+                return av.VideoFrame.from_ndarray(vis, format="bgr24")
+    
+        webrtc_ctx = webrtc_streamer(
+            key="tm-live",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=rtc_configuration,     # <-- Step 2: pass ICE config (STUN/TURN)
+            media_stream_constraints=constraints,
+            video_processor_factory=TMVideoProcessor,
+            async_processing=True,
         )
+    
+        if webrtc_ctx and webrtc_ctx.video_processor and webrtc_ctx.video_processor.last_label:
+            st.info(
+                f"Live prediction: **{webrtc_ctx.video_processor.last_label}** "
+                f"(confidence **{webrtc_ctx.video_processor.last_score:.2f}**)"
+            )
+    
+    # Build RTC configuration and render section
+    rtc_cfg = get_rtc_configuration(force_relay=force_relay)
+    live_webrtc_section(crop_size, infer, labels, infer_lock, video_constraints, rtc_cfg)
 
-# Build RTC configuration and render section
-rtc_cfg = get_rtc_configuration(force_relay=force_relay)
-live_webrtc_section(crop_size, infer, labels, infer_lock, video_constraints, rtc_cfg)
+
+
+
 
