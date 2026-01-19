@@ -208,8 +208,8 @@ infer_lock = threading.Lock()
 # ------------------------
 # Browser Camera Snapshot
 # ------------------------
-st.subheader("Browser Camera Snapshot")
-st.caption("Use your browser camera to capture an image and run inference.")
+st.subheader("Static Image Capture")
+st.caption("Use your browser camera to capture an image of fruit and run the model.")
 
 photo = st.camera_input("Capture a photo")
 if photo is not None:
@@ -238,7 +238,7 @@ if photo is not None:
 # Live Webcam (Phone/Browser) via WebRTC
 # ------------------------
 st.divider()
-st.subheader("Live Webcam (Phone/Browser)")
+st.subheader("Real‑Time Detection")
 st.caption(
     "Works in mobile browsers using WebRTC. For iOS, open in Safari and ensure HTTPS. "
     "Click 'Allow' when the browser asks for camera permissions."
