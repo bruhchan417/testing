@@ -33,7 +33,7 @@ css = """
 """
 st.html(f"<style>{css}</style>")
 st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
-st.title("Fruit Freshness Detector")
+st.title("🍑 Fruit Freshness Detector 🥝")
 st.caption("Using well-trained TensorFlow SavedModel to classify the freshness of a fruit. The system supports two modes of data acquisition - Static Image Capture and Real‑Time Detection")
 with st.container(key="my_green_container"):
     st.markdown("✅:green[System Ready]")
