@@ -36,7 +36,7 @@ st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
 st.title("Fruit Freshness Detector")
 st.caption("Using well-trained TensorFlow SavedModel to classify the freshness of a fruit. The system supports two modes of data acquisition - Static Image Capture and Real‑Time Detection")
 with st.container(key="my_green_container"):
-    st.markdown("✅:green[System loaded]")
+    st.markdown("✅:green[System Ready]")
 MODEL_DIR = os.getenv("MODEL_DIR", "model.savedmodel")
 DEFAULT_LABELS_PATH = os.getenv("LABELS_PATH", "labels.txt")
 INPUT_SIZE: Tuple[int, int] = (224, 224)  # (height, width)
@@ -216,10 +216,10 @@ infer_lock = threading.Lock()
 # ------------------------
 # Browser Camera Snapshot
 # ------------------------
-st.subheader("Static Image Capture")
+st.subheader("🖼️ Static Image Capture")
 st.caption("Use your browser camera to capture an image of fruit and run the model.")
 
-photo = st.camera_input("Capture a photo")
+photo = st.camera_input("📸 Capture a photo")
 if photo is not None:
     image = Image.open(io.BytesIO(photo.getvalue())).convert("RGB")
     frame_rgb = np.array(image)
@@ -246,9 +246,9 @@ if photo is not None:
 # Live Webcam (Phone/Browser) via WebRTC
 # ------------------------
 st.divider()
-st.subheader("Real‑Time Detection")
+st.subheader("🖲 Real‑Time Detection")
 st.caption(
-    "Works in mobile browsers using WebRTC. For iOS, open in Safari and ensure HTTPS. "
+    "📹 process live video streams from the user’s browser camera. "
     "Click 'Allow' when the browser asks for camera permissions."
 )
 
