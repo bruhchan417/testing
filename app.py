@@ -249,7 +249,6 @@ with tab2:
     # ------------------------
     # Live Webcam (Phone/Browser) via WebRTC
     # ------------------------
-    st.divider()
     st.subheader("🖲 Real‑Time Detection")
     st.caption(
         "process live video streams from the user’s browser camera. "
