@@ -213,16 +213,16 @@ except Exception as e:
 # Thread lock for inference when multiple frames are processed
 infer_lock = threading.Lock()
 
-tab1, tab2= st.tabs(["Snapshot", "Live WebCam"])
+tab1, tab2= st.tabs(["📸 Snapshot", "📹 Live WebCam"])
 
 with tab1:
     # ------------------------
     # Browser Camera Snapshot
     # ------------------------
-    st.subheader("🖼️ Static Image Capture")
+    st.subheader("Static Image Capture")
     st.caption("Use your browser camera to capture an image of fruit and run the model.")
     
-    photo = st.camera_input("📸 Capture a photo")
+    photo = st.camera_input("Capture a photo")
     if photo is not None:
         image = Image.open(io.BytesIO(photo.getvalue())).convert("RGB")
         frame_rgb = np.array(image)
@@ -249,14 +249,14 @@ with tab2:
     # ------------------------
     # Live Webcam (Phone/Browser) via WebRTC
     # ------------------------
-    st.subheader("🖲 Real‑Time Detection")
+    st.subheader("Real‑Time Detection")
     st.caption(
         "process live video streams from the user’s browser camera. "
         "Click 'Allow' when the browser asks for camera permissions."
     )
     
     # Pick which camera to use; 'environment' is rear camera on phones
-    cam_choice = st.radio("📹 Camera", ["Rear (environment)", "Front (user)"], index=0)
+    cam_choice = st.radio("Camera", ["Rear (environment)", "Front (user)"], index=0)
     
     video_constraints = {
         "video": {
