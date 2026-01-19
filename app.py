@@ -26,7 +26,7 @@ from PIL import Image
 # Page & App Config
 # ------------------------
 st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
-st.title("Teachable Machine Model — Streamlit Web App")
+st.title("Fruit Freshness Detector")
 st.caption("Runs a TensorFlow SavedModel on camera snapshots or a live browser camera stream.")
 
 MODEL_DIR = os.getenv("MODEL_DIR", "model.savedmodel")
