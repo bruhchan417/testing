@@ -248,12 +248,12 @@ if photo is not None:
 st.divider()
 st.subheader("🖲 Real‑Time Detection")
 st.caption(
-    "📹 process live video streams from the user’s browser camera. "
+    "process live video streams from the user’s browser camera. "
     "Click 'Allow' when the browser asks for camera permissions."
 )
 
 # Pick which camera to use; 'environment' is rear camera on phones
-cam_choice = st.radio("Camera", ["Rear (environment)", "Front (user)"], index=0)
+cam_choice = st.radio("📹 Camera", ["Rear (environment)", "Front (user)"], index=0)
 
 video_constraints = {
     "video": {
