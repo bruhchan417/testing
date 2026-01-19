@@ -28,7 +28,7 @@ from PIL import Image
 css = """
 .st-key-my_green_container {
     padding:25px;
-    background-color: rgba(205, 254, 194, 0.3);
+    background-color: rgba(22, 160, 133, 0.3);
 }
 """
 st.html(f"<style>{css}</style>")
