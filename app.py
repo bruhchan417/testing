@@ -25,17 +25,12 @@ from PIL import Image
 # ------------------------
 # Page & App Config
 # ------------------------
-css = """
-.st-key-my_green_container {
-    padding:15px;
-    background-color: rgba(46, 204, 113, 0.3);
-}
-"""
+
 st.html(f"<style>{css}</style>")
 st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
 st.title("🍑 Fruit Freshness Detector 🥝")
 st.caption("Using well-trained TensorFlow SavedModel to classify the freshness of a fruit. The system supports two modes of data acquisition - Static Image Capture and Real‑Time Detection")
-st.success('System Ready!', icon="✅")
+st.success('System Ready', icon="✅")
 MODEL_DIR = os.getenv("MODEL_DIR", "model.savedmodel")
 DEFAULT_LABELS_PATH = os.getenv("LABELS_PATH", "labels.txt")
 INPUT_SIZE: Tuple[int, int] = (224, 224)  # (height, width)
