@@ -29,7 +29,7 @@ from PIL import Image
 st.set_page_config(page_title="TM + TensorFlow Classifier", layout="centered")
 st.title("🍑 Fruit Freshness Detector 🥝")
 st.caption("Using well-trained TensorFlow SavedModel to classify the freshness of a fruit. The system supports two modes of data acquisition - Static Image Capture and Real‑Time Detection")
-st.success('System Ready', icon="✅")
+
 MODEL_DIR = os.getenv("MODEL_DIR", "model.savedmodel")
 DEFAULT_LABELS_PATH = os.getenv("LABELS_PATH", "labels.txt")
 INPUT_SIZE: Tuple[int, int] = (224, 224)  # (height, width)
@@ -206,6 +206,7 @@ except Exception as e:
 # Thread lock for inference when multiple frames are processed
 infer_lock = threading.Lock()
 
+st.success('System Ready', icon="✅")
 tab1, tab2= st.tabs(["📸 Snapshot", "📹 Live WebCam"])
 
 with tab1:
